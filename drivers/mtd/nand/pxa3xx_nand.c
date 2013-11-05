@@ -1236,7 +1236,6 @@ static int pxa3xx_nand_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_OF
 static struct of_device_id pxa3xx_nand_dt_ids[] = {
 	{
 		.compatible = "marvell,pxa3xx-nand",
@@ -1284,12 +1283,6 @@ static int pxa3xx_nand_probe_dt(struct platform_device *pdev)
 
 	return 0;
 }
-#else
-static inline int pxa3xx_nand_probe_dt(struct platform_device *pdev)
-{
-	return 0;
-}
-#endif
 
 static int pxa3xx_nand_probe(struct platform_device *pdev)
 {
@@ -1327,7 +1320,12 @@ static int pxa3xx_nand_probe(struct platform_device *pdev)
 	for (cs = 0; cs < pdata->num_cs; cs++) {
 		struct mtd_info *mtd = info->host[cs]->mtd;
 
-		mtd->name = pdev->name;
+		/*
+		 * The mtd name matches the one used in 'mtdparts' kernel
+		 * parameter. This name cannot be changed or otherwise
+		 * user's mtd partitions configuration would get broken.
+		 */
+		mtd->name = "pxa3xx_nand-0";
 		info->cs = cs;
 		ret = pxa3xx_nand_scan(mtd);
 		if (ret) {

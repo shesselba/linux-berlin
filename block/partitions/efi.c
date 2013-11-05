@@ -186,6 +186,7 @@ invalid:
  */
 static int is_pmbr_valid(legacy_mbr *mbr, sector_t total_sectors)
 {
+	uint32_t sz = 0;
 	int i, part = 0, ret = 0; /* invalid by default */
 
 	if (!mbr || le16_to_cpu(mbr->signature) != MSDOS_MBR_SIGNATURE)
@@ -216,13 +217,21 @@ check_hybrid:
 	/*
 	 * Protective MBRs take up the lesser of the whole disk
 	 * or 2 TiB (32bit LBA), ignoring the rest of the disk.
+	 * Some partitioning programs, nonetheless, choose to set
+	 * the size to the maximum 32-bit limitation, disregarding
+	 * the disk size.
 	 *
 	 * Hybrid MBRs do not necessarily comply with this.
+	 *
+	 * Consider a bad value here to be a warning to support dd'ing
+	 * an image from a smaller disk to a larger disk.
 	 */
 	if (ret == GPT_MBR_PROTECTIVE) {
-		if (le32_to_cpu(mbr->partition_record[part].size_in_lba) !=
-		    min((uint32_t) total_sectors - 1, 0xFFFFFFFF))
-			ret = 0;
+		sz = le32_to_cpu(mbr->partition_record[part].size_in_lba);
+		if (sz != (uint32_t) total_sectors - 1 && sz != 0xFFFFFFFF)
+			pr_debug("GPT: mbr size in lba (%u) different than whole disk (%u).\n",
+				 sz, min_t(uint32_t,
+					   total_sectors - 1, 0xFFFFFFFF));
 	}
 done:
 	return ret;

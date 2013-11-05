@@ -1293,7 +1293,8 @@ static ssize_t tun_do_read(struct tun_struct *tun, struct tun_file *tfile,
 	if (unlikely(!noblock))
 		add_wait_queue(&tfile->wq.wait, &wait);
 	while (len) {
-		current->state = TASK_INTERRUPTIBLE;
+		if (unlikely(!noblock))
+			current->state = TASK_INTERRUPTIBLE;
 
 		/* Read frames from the queue */
 		if (!(skb = skb_dequeue(&tfile->socket.sk->sk_receive_queue))) {
@@ -1320,9 +1321,10 @@ static ssize_t tun_do_read(struct tun_struct *tun, struct tun_file *tfile,
 		break;
 	}
 
-	current->state = TASK_RUNNING;
-	if (unlikely(!noblock))
+	if (unlikely(!noblock)) {
+		current->state = TASK_RUNNING;
 		remove_wait_queue(&tfile->wq.wait, &wait);
+	}
 
 	return ret;
 }
@@ -1641,11 +1643,11 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 		INIT_LIST_HEAD(&tun->disabled);
 		err = tun_attach(tun, file, false);
 		if (err < 0)
-			goto err_free_dev;
+			goto err_free_flow;
 
 		err = register_netdevice(tun->dev);
 		if (err < 0)
-			goto err_free_dev;
+			goto err_detach;
 
 		if (device_create_file(&tun->dev->dev, &dev_attr_tun_flags) ||
 		    device_create_file(&tun->dev->dev, &dev_attr_owner) ||
@@ -1689,7 +1691,12 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 	strcpy(ifr->ifr_name, tun->dev->name);
 	return 0;
 
- err_free_dev:
+err_detach:
+	tun_detach_all(dev);
+err_free_flow:
+	tun_flow_uninit(tun);
+	security_tun_dev_free_security(tun->security);
+err_free_dev:
 	free_netdev(dev);
 	return err;
 }
