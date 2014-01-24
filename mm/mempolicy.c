@@ -1197,14 +1197,14 @@ static struct page *new_vma_page(struct page *page, unsigned long private, int *
 			break;
 		vma = vma->vm_next;
 	}
-	/*
-	 * queue_pages_range() confirms that @page belongs to some vma,
-	 * so vma shouldn't be NULL.
-	 */
-	BUG_ON(!vma);
 
-	if (PageHuge(page))
+	if (PageHuge(page)) {
+		BUG_ON(!vma);
 		return alloc_huge_page_noerr(vma, address, 1);
+	}
+	/*
+	 * if !vma, alloc_page_vma() will use task or system default policy
+	 */
 	return alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, address);
 }
 #else
@@ -1318,7 +1318,7 @@ static long do_mbind(unsigned long start, unsigned long len,
 		if (nr_failed && (flags & MPOL_MF_STRICT))
 			err = -EIO;
 	} else
-		putback_lru_pages(&pagelist);
+		putback_movable_pages(&pagelist);
 
 	up_write(&mm->mmap_sem);
  mpol_out:
@@ -2666,7 +2666,7 @@ static void __init check_numabalancing_enable(void)
 
 	if (nr_node_ids > 1 && !numabalancing_override) {
 		printk(KERN_INFO "Enabling automatic NUMA balancing. "
-			"Configure with numa_balancing= or sysctl");
+			"Configure with numa_balancing= or the kernel.numa_balancing sysctl");
 		set_numabalancing_state(numabalancing_default);
 	}
 }
