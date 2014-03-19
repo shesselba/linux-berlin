@@ -395,7 +395,7 @@ struct sock {
 	unsigned short		sk_ack_backlog;
 	unsigned short		sk_max_ack_backlog;
 	__u32			sk_priority;
-#if IS_ENABLED(CONFIG_NETPRIO_CGROUP)
+#if IS_ENABLED(CONFIG_CGROUP_NET_PRIO)
 	__u32			sk_cgrp_prioidx;
 #endif
 	struct pid		*sk_peer_pid;
@@ -820,27 +820,41 @@ static inline int sk_backlog_rcv(struct sock *sk, struct sk_buff *skb)
 	return sk->sk_backlog_rcv(sk, skb);
 }
 
-static inline void sock_rps_record_flow(const struct sock *sk)
+static inline void sock_rps_record_flow_hash(__u32 hash)
 {
 #ifdef CONFIG_RPS
 	struct rps_sock_flow_table *sock_flow_table;
 
 	rcu_read_lock();
 	sock_flow_table = rcu_dereference(rps_sock_flow_table);
-	rps_record_sock_flow(sock_flow_table, sk->sk_rxhash);
+	rps_record_sock_flow(sock_flow_table, hash);
 	rcu_read_unlock();
+#endif
+}
+
+static inline void sock_rps_reset_flow_hash(__u32 hash)
+{
+#ifdef CONFIG_RPS
+	struct rps_sock_flow_table *sock_flow_table;
+
+	rcu_read_lock();
+	sock_flow_table = rcu_dereference(rps_sock_flow_table);
+	rps_reset_sock_flow(sock_flow_table, hash);
+	rcu_read_unlock();
+#endif
+}
+
+static inline void sock_rps_record_flow(const struct sock *sk)
+{
+#ifdef CONFIG_RPS
+	sock_rps_record_flow_hash(sk->sk_rxhash);
 #endif
 }
 
 static inline void sock_rps_reset_flow(const struct sock *sk)
 {
 #ifdef CONFIG_RPS
-	struct rps_sock_flow_table *sock_flow_table;
-
-	rcu_read_lock();
-	sock_flow_table = rcu_dereference(rps_sock_flow_table);
-	rps_reset_sock_flow(sock_flow_table, sk->sk_rxhash);
-	rcu_read_unlock();
+	sock_rps_reset_flow_hash(sk->sk_rxhash);
 #endif
 }
 
@@ -1035,7 +1049,6 @@ enum cg_proto_flags {
 };
 
 struct cg_proto {
-	void			(*enter_memory_pressure)(struct sock *sk);
 	struct res_counter	memory_allocated;	/* Current allocated memory. */
 	struct percpu_counter	sockets_allocated;	/* Current number of sockets. */
 	int			memory_pressure;
@@ -1155,8 +1168,7 @@ static inline void sk_leave_memory_pressure(struct sock *sk)
 		struct proto *prot = sk->sk_prot;
 
 		for (; cg_proto; cg_proto = parent_cg_proto(prot, cg_proto))
-			if (cg_proto->memory_pressure)
-				cg_proto->memory_pressure = 0;
+			cg_proto->memory_pressure = 0;
 	}
 
 }
@@ -1171,7 +1183,7 @@ static inline void sk_enter_memory_pressure(struct sock *sk)
 		struct proto *prot = sk->sk_prot;
 
 		for (; cg_proto; cg_proto = parent_cg_proto(prot, cg_proto))
-			cg_proto->enter_memory_pressure(sk);
+			cg_proto->memory_pressure = 1;
 	}
 
 	sk->sk_prot->enter_memory_pressure(sk);
@@ -1476,6 +1488,11 @@ static inline void sk_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
  */
 #define sock_owned_by_user(sk)	((sk)->sk_lock.owned)
 
+static inline void sock_release_ownership(struct sock *sk)
+{
+	sk->sk_lock.owned = 0;
+}
+
 /*
  * Macro so as to not evaluate some arguments when
  * lockdep is not enabled.
@@ -1536,8 +1553,6 @@ void sk_release_kernel(struct sock *sk);
 struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority);
 
 struct sk_buff *sock_wmalloc(struct sock *sk, unsigned long size, int force,
-			     gfp_t priority);
-struct sk_buff *sock_rmalloc(struct sock *sk, unsigned long size, int force,
 			     gfp_t priority);
 void sock_wfree(struct sk_buff *skb);
 void skb_orphan_partial(struct sk_buff *skb);
@@ -2176,7 +2191,6 @@ static inline void sock_recv_ts_and_drops(struct msghdr *msg, struct sock *sk,
 {
 #define FLAGS_TS_OR_DROPS ((1UL << SOCK_RXQ_OVFL)			| \
 			   (1UL << SOCK_RCVTSTAMP)			| \
-			   (1UL << SOCK_TIMESTAMPING_RX_SOFTWARE)	| \
 			   (1UL << SOCK_TIMESTAMPING_SOFTWARE)		| \
 			   (1UL << SOCK_TIMESTAMPING_RAW_HARDWARE)	| \
 			   (1UL << SOCK_TIMESTAMPING_SYS_HARDWARE))
