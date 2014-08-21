@@ -82,9 +82,9 @@ static ssize_t elog_ack_store(struct elog_obj *elog_obj,
 }
 
 static struct elog_attribute id_attribute =
-	__ATTR(id, 0666, elog_id_show, NULL);
+	__ATTR(id, S_IRUGO, elog_id_show, NULL);
 static struct elog_attribute type_attribute =
-	__ATTR(type, 0666, elog_type_show, NULL);
+	__ATTR(type, S_IRUGO, elog_type_show, NULL);
 static struct elog_attribute ack_attribute =
 	__ATTR(acknowledge, 0660, elog_ack_show, elog_ack_store);
 
@@ -238,19 +238,26 @@ static struct elog_obj *create_elog_obj(uint64_t id, size_t size, uint64_t type)
 
 static void elog_work_fn(struct work_struct *work)
 {
-	size_t elog_size;
+	__be64 size;
+	__be64 id;
+	__be64 type;
+	uint64_t elog_size;
 	uint64_t log_id;
 	uint64_t elog_type;
 	int rc;
 	char name[2+16+1];
 
-	rc = opal_get_elog_size(&log_id, &elog_size, &elog_type);
+	rc = opal_get_elog_size(&id, &size, &type);
 	if (rc != OPAL_SUCCESS) {
-		pr_err("ELOG: Opal log read failed\n");
+		pr_err("ELOG: OPAL log info read failed\n");
 		return;
 	}
 
-	BUG_ON(elog_size > OPAL_MAX_ERRLOG_SIZE);
+	elog_size = be64_to_cpu(size);
+	log_id = be64_to_cpu(id);
+	elog_type = be64_to_cpu(type);
+
+	WARN_ON(elog_size > OPAL_MAX_ERRLOG_SIZE);
 
 	if (elog_size >= OPAL_MAX_ERRLOG_SIZE)
 		elog_size  =  OPAL_MAX_ERRLOG_SIZE;

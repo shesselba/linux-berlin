@@ -48,6 +48,17 @@
 #define MSIX_LEGACY_SZ		4
 #define MIN_MSIX_P_PORT		5
 
+#define MLX4_NUM_UP			8
+#define MLX4_NUM_TC			8
+#define MLX4_MAX_100M_UNITS_VAL		255	/*
+						 * work around: can't set values
+						 * greater then this value when
+						 * using 100 Mbps units.
+						 */
+#define MLX4_RATELIMIT_100M_UNITS	3	/* 100 Mbps */
+#define MLX4_RATELIMIT_1G_UNITS		4	/* 1 Gbps */
+#define MLX4_RATELIMIT_DEFAULT		0x00ff
+
 #define MLX4_ROCE_MAX_GIDS	128
 #define MLX4_ROCE_PF_GIDS	16
 
@@ -172,6 +183,7 @@ enum {
 	MLX4_DEV_CAP_FLAG2_UPDATE_QP		= 1LL <<  8,
 	MLX4_DEV_CAP_FLAG2_DMFS_IPOIB		= 1LL <<  9,
 	MLX4_DEV_CAP_FLAG2_VXLAN_OFFLOADS	= 1LL <<  10,
+	MLX4_DEV_CAP_FLAG2_MAD_DEMUX		= 1LL <<  11,
 };
 
 enum {
@@ -262,6 +274,7 @@ enum {
 	MLX4_PERM_REMOTE_WRITE	= 1 << 13,
 	MLX4_PERM_ATOMIC	= 1 << 14,
 	MLX4_PERM_BIND_MW	= 1 << 15,
+	MLX4_PERM_MASK		= 0xFC00
 };
 
 enum {
@@ -401,6 +414,7 @@ struct mlx4_caps {
 	int			max_rq_desc_sz;
 	int			max_qp_init_rdma;
 	int			max_qp_dest_rdma;
+	u32			*qp0_qkey;
 	u32			*qp0_proxy;
 	u32			*qp1_proxy;
 	u32			*qp0_tunnel;
@@ -449,7 +463,6 @@ struct mlx4_caps {
 	int                     reserved_qps_base[MLX4_NUM_QP_REGION];
 	int                     log_num_macs;
 	int                     log_num_vlans;
-	int                     log_num_prios;
 	enum mlx4_port_type	port_type[MLX4_MAX_PORTS + 1];
 	u8			supported_type[MLX4_MAX_PORTS + 1];
 	u8                      suggested_type[MLX4_MAX_PORTS + 1];
@@ -577,6 +590,7 @@ struct mlx4_cq {
 
 	u32			cons_index;
 
+	u16                     irq;
 	__be32		       *set_ci_db;
 	__be32		       *arm_db;
 	int			arm_sn;
@@ -837,7 +851,7 @@ static inline int mlx4_is_slave(struct mlx4_dev *dev)
 }
 
 int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
-		   struct mlx4_buf *buf);
+		   struct mlx4_buf *buf, gfp_t gfp);
 void mlx4_buf_free(struct mlx4_dev *dev, int size, struct mlx4_buf *buf);
 static inline void *mlx4_buf_offset(struct mlx4_buf *buf, int offset)
 {
@@ -874,9 +888,10 @@ int mlx4_mw_enable(struct mlx4_dev *dev, struct mlx4_mw *mw);
 int mlx4_write_mtt(struct mlx4_dev *dev, struct mlx4_mtt *mtt,
 		   int start_index, int npages, u64 *page_list);
 int mlx4_buf_write_mtt(struct mlx4_dev *dev, struct mlx4_mtt *mtt,
-		       struct mlx4_buf *buf);
+		       struct mlx4_buf *buf, gfp_t gfp);
 
-int mlx4_db_alloc(struct mlx4_dev *dev, struct mlx4_db *db, int order);
+int mlx4_db_alloc(struct mlx4_dev *dev, struct mlx4_db *db, int order,
+		  gfp_t gfp);
 void mlx4_db_free(struct mlx4_dev *dev, struct mlx4_db *db);
 
 int mlx4_alloc_hwq_res(struct mlx4_dev *dev, struct mlx4_hwq_resources *wqres,
@@ -892,7 +907,8 @@ void mlx4_cq_free(struct mlx4_dev *dev, struct mlx4_cq *cq);
 int mlx4_qp_reserve_range(struct mlx4_dev *dev, int cnt, int align, int *base);
 void mlx4_qp_release_range(struct mlx4_dev *dev, int base_qpn, int cnt);
 
-int mlx4_qp_alloc(struct mlx4_dev *dev, int qpn, struct mlx4_qp *qp);
+int mlx4_qp_alloc(struct mlx4_dev *dev, int qpn, struct mlx4_qp *qp,
+		  gfp_t gfp);
 void mlx4_qp_free(struct mlx4_dev *dev, struct mlx4_qp *qp);
 
 int mlx4_srq_alloc(struct mlx4_dev *dev, u32 pdn, u32 cqn, u16 xrcdn,
@@ -1162,6 +1178,8 @@ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
 		   int *vector);
 void mlx4_release_eq(struct mlx4_dev *dev, int vec);
 
+int mlx4_eq_get_irq(struct mlx4_dev *dev, int vec);
+
 int mlx4_get_phys_port_id(struct mlx4_dev *dev);
 int mlx4_wol_read(struct mlx4_dev *dev, u64 *config, int port);
 int mlx4_wol_write(struct mlx4_dev *dev, u64 config, int port);
@@ -1234,4 +1252,30 @@ int mlx4_phys_to_slave_port(struct mlx4_dev *dev, int slave, int port);
 int mlx4_get_base_gid_ix(struct mlx4_dev *dev, int slave, int port);
 
 int mlx4_config_vxlan_port(struct mlx4_dev *dev, __be16 udp_port);
+int mlx4_vf_smi_enabled(struct mlx4_dev *dev, int slave, int port);
+int mlx4_vf_get_enable_smi_admin(struct mlx4_dev *dev, int slave, int port);
+int mlx4_vf_set_enable_smi_admin(struct mlx4_dev *dev, int slave, int port,
+				 int enable);
+int mlx4_mr_hw_get_mpt(struct mlx4_dev *dev, struct mlx4_mr *mmr,
+		       struct mlx4_mpt_entry ***mpt_entry);
+int mlx4_mr_hw_write_mpt(struct mlx4_dev *dev, struct mlx4_mr *mmr,
+			 struct mlx4_mpt_entry **mpt_entry);
+int mlx4_mr_hw_change_pd(struct mlx4_dev *dev, struct mlx4_mpt_entry *mpt_entry,
+			 u32 pdn);
+int mlx4_mr_hw_change_access(struct mlx4_dev *dev,
+			     struct mlx4_mpt_entry *mpt_entry,
+			     u32 access);
+void mlx4_mr_hw_put_mpt(struct mlx4_dev *dev,
+			struct mlx4_mpt_entry **mpt_entry);
+void mlx4_mr_rereg_mem_cleanup(struct mlx4_dev *dev, struct mlx4_mr *mr);
+int mlx4_mr_rereg_mem_write(struct mlx4_dev *dev, struct mlx4_mr *mr,
+			    u64 iova, u64 size, int npages,
+			    int page_shift, struct mlx4_mpt_entry *mpt_entry);
+
+/* Returns true if running in low memory profile (kdump kernel) */
+static inline bool mlx4_low_memory_profile(void)
+{
+	return reset_devices;
+}
+
 #endif /* MLX4_DEVICE_H */

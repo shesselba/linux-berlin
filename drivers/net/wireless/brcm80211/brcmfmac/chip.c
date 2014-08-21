@@ -303,10 +303,10 @@ static void brcmf_chip_ai_coredisable(struct brcmf_core_priv *core,
 
 	ci = core->chip;
 
-	/* if core is already in reset, just return */
+	/* if core is already in reset, skip reset */
 	regdata = ci->ops->read32(ci->ctx, core->wrapbase + BCMA_RESET_CTL);
 	if ((regdata & BCMA_RESET_CTL_RESET) != 0)
-		return;
+		goto in_reset_configure;
 
 	/* configure reset */
 	ci->ops->write32(ci->ctx, core->wrapbase + BCMA_IOCTL,
@@ -322,6 +322,7 @@ static void brcmf_chip_ai_coredisable(struct brcmf_core_priv *core,
 	SPINWAIT(ci->ops->read32(ci->ctx, core->wrapbase + BCMA_RESET_CTL) !=
 		 BCMA_RESET_CTL_RESET, 300);
 
+in_reset_configure:
 	/* in-reset configure */
 	ci->ops->write32(ci->ctx, core->wrapbase + BCMA_IOCTL,
 			 reset | BCMA_IOCTL_FGC | BCMA_IOCTL_CLK);
@@ -481,31 +482,39 @@ static inline int brcmf_chip_cores_check(struct brcmf_chip_priv *ci)
 static void brcmf_chip_get_raminfo(struct brcmf_chip_priv *ci)
 {
 	switch (ci->pub.chip) {
-	case BCM4329_CHIP_ID:
+	case BRCM_CC_4329_CHIP_ID:
 		ci->pub.ramsize = BCM4329_RAMSIZE;
 		break;
-	case BCM43143_CHIP_ID:
+	case BRCM_CC_43143_CHIP_ID:
 		ci->pub.ramsize = BCM43143_RAMSIZE;
 		break;
-	case BCM43241_CHIP_ID:
+	case BRCM_CC_43241_CHIP_ID:
 		ci->pub.ramsize = 0x90000;
 		break;
-	case BCM4330_CHIP_ID:
+	case BRCM_CC_4330_CHIP_ID:
 		ci->pub.ramsize = 0x48000;
 		break;
-	case BCM4334_CHIP_ID:
+	case BRCM_CC_4334_CHIP_ID:
 		ci->pub.ramsize = 0x80000;
 		break;
-	case BCM4335_CHIP_ID:
+	case BRCM_CC_4335_CHIP_ID:
 		ci->pub.ramsize = 0xc0000;
 		ci->pub.rambase = 0x180000;
 		break;
-	case BCM43362_CHIP_ID:
+	case BRCM_CC_43362_CHIP_ID:
 		ci->pub.ramsize = 0x3c000;
 		break;
-	case BCM4339_CHIP_ID:
-	case BCM4354_CHIP_ID:
+	case BRCM_CC_4339_CHIP_ID:
+	case BRCM_CC_4354_CHIP_ID:
+	case BRCM_CC_4356_CHIP_ID:
+	case BRCM_CC_43567_CHIP_ID:
+	case BRCM_CC_43569_CHIP_ID:
+	case BRCM_CC_43570_CHIP_ID:
 		ci->pub.ramsize = 0xc0000;
+		ci->pub.rambase = 0x180000;
+		break;
+	case BRCM_CC_43602_CHIP_ID:
+		ci->pub.ramsize = 0xf0000;
 		ci->pub.rambase = 0x180000;
 		break;
 	default:
@@ -681,7 +690,7 @@ static int brcmf_chip_recognition(struct brcmf_chip_priv *ci)
 		  ci->pub.chiprev);
 
 	if (socitype == SOCI_SB) {
-		if (ci->pub.chip != BCM4329_CHIP_ID) {
+		if (ci->pub.chip != BRCM_CC_4329_CHIP_ID) {
 			brcmf_err("SB chip is not supported\n");
 			return -ENODEV;
 		}
@@ -1007,13 +1016,13 @@ bool brcmf_chip_sr_capable(struct brcmf_chip *pub)
 	chip = container_of(pub, struct brcmf_chip_priv, pub);
 
 	switch (pub->chip) {
-	case BCM4354_CHIP_ID:
+	case BRCM_CC_4354_CHIP_ID:
 		/* explicitly check SR engine enable bit */
 		pmu_cc3_mask = BIT(2);
 		/* fall-through */
-	case BCM43241_CHIP_ID:
-	case BCM4335_CHIP_ID:
-	case BCM4339_CHIP_ID:
+	case BRCM_CC_43241_CHIP_ID:
+	case BRCM_CC_4335_CHIP_ID:
+	case BRCM_CC_4339_CHIP_ID:
 		/* read PMU chipcontrol register 3 */
 		addr = CORE_CC_REG(base, chipcontrol_addr);
 		chip->ops->write32(chip->ctx, addr, 3);

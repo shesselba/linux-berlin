@@ -281,7 +281,6 @@ void truncate_inode_pages_range(struct address_space *mapping,
 	while (index < end && pagevec_lookup_entries(&pvec, mapping, index,
 			min(end - index, (pgoff_t)PAGEVEC_SIZE),
 			indices)) {
-		mem_cgroup_uncharge_start();
 		for (i = 0; i < pagevec_count(&pvec); i++) {
 			struct page *page = pvec.pages[i];
 
@@ -307,7 +306,6 @@ void truncate_inode_pages_range(struct address_space *mapping,
 		}
 		pagevec_remove_exceptionals(&pvec);
 		pagevec_release(&pvec);
-		mem_cgroup_uncharge_end();
 		cond_resched();
 		index++;
 	}
@@ -355,26 +353,30 @@ void truncate_inode_pages_range(struct address_space *mapping,
 	for ( ; ; ) {
 		cond_resched();
 		if (!pagevec_lookup_entries(&pvec, mapping, index,
-			min(end - index, (pgoff_t)PAGEVEC_SIZE),
-			indices)) {
+			min(end - index, (pgoff_t)PAGEVEC_SIZE), indices)) {
+			/* If all gone from start onwards, we're done */
 			if (index == start)
 				break;
+			/* Otherwise restart to make sure all gone */
 			index = start;
 			continue;
 		}
 		if (index == start && indices[0] >= end) {
+			/* All gone out of hole to be punched, we're done */
 			pagevec_remove_exceptionals(&pvec);
 			pagevec_release(&pvec);
 			break;
 		}
-		mem_cgroup_uncharge_start();
 		for (i = 0; i < pagevec_count(&pvec); i++) {
 			struct page *page = pvec.pages[i];
 
 			/* We rely upon deletion not changing page->index */
 			index = indices[i];
-			if (index >= end)
+			if (index >= end) {
+				/* Restart punch to make sure all gone */
+				index = start - 1;
 				break;
+			}
 
 			if (radix_tree_exceptional_entry(page)) {
 				clear_exceptional_entry(mapping, index, page);
@@ -389,7 +391,6 @@ void truncate_inode_pages_range(struct address_space *mapping,
 		}
 		pagevec_remove_exceptionals(&pvec);
 		pagevec_release(&pvec);
-		mem_cgroup_uncharge_end();
 		index++;
 	}
 	cleancache_invalidate_inode(mapping);
@@ -484,19 +485,10 @@ unsigned long invalidate_mapping_pages(struct address_space *mapping,
 	unsigned long count = 0;
 	int i;
 
-	/*
-	 * Note: this function may get called on a shmem/tmpfs mapping:
-	 * pagevec_lookup() might then return 0 prematurely (because it
-	 * got a gangful of swap entries); but it's hardly worth worrying
-	 * about - it can rarely have anything to free from such a mapping
-	 * (most pages are dirty), and already skips over any difficulties.
-	 */
-
 	pagevec_init(&pvec, 0);
 	while (index <= end && pagevec_lookup_entries(&pvec, mapping, index,
 			min(end - index, (pgoff_t)PAGEVEC_SIZE - 1) + 1,
 			indices)) {
-		mem_cgroup_uncharge_start();
 		for (i = 0; i < pagevec_count(&pvec); i++) {
 			struct page *page = pvec.pages[i];
 
@@ -525,7 +517,6 @@ unsigned long invalidate_mapping_pages(struct address_space *mapping,
 		}
 		pagevec_remove_exceptionals(&pvec);
 		pagevec_release(&pvec);
-		mem_cgroup_uncharge_end();
 		cond_resched();
 		index++;
 	}
@@ -556,7 +547,6 @@ invalidate_complete_page2(struct address_space *mapping, struct page *page)
 	BUG_ON(page_has_private(page));
 	__delete_from_page_cache(page, NULL);
 	spin_unlock_irq(&mapping->tree_lock);
-	mem_cgroup_uncharge_cache_page(page);
 
 	if (mapping->a_ops->freepage)
 		mapping->a_ops->freepage(page);
@@ -605,7 +595,6 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 	while (index <= end && pagevec_lookup_entries(&pvec, mapping, index,
 			min(end - index, (pgoff_t)PAGEVEC_SIZE - 1) + 1,
 			indices)) {
-		mem_cgroup_uncharge_start();
 		for (i = 0; i < pagevec_count(&pvec); i++) {
 			struct page *page = pvec.pages[i];
 
@@ -658,7 +647,6 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 		}
 		pagevec_remove_exceptionals(&pvec);
 		pagevec_release(&pvec);
-		mem_cgroup_uncharge_end();
 		cond_resched();
 		index++;
 	}

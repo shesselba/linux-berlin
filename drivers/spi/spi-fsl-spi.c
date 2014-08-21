@@ -58,7 +58,7 @@ static struct fsl_spi_match_data of_fsl_spi_grlib_config = {
 	.type = TYPE_GRLIB,
 };
 
-static struct of_device_id of_fsl_spi_match[] = {
+static const struct of_device_id of_fsl_spi_match[] = {
 	{
 		.compatible = "fsl,spi",
 		.data = &of_fsl_spi_fsl_config,
@@ -431,7 +431,7 @@ static int fsl_spi_setup(struct spi_device *spi)
 		return -EINVAL;
 
 	if (!cs) {
-		cs = kzalloc(sizeof *cs, GFP_KERNEL);
+		cs = devm_kzalloc(&spi->dev, sizeof(*cs), GFP_KERNEL);
 		if (!cs)
 			return -ENOMEM;
 		spi->controller_state = cs;

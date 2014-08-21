@@ -105,7 +105,7 @@ MODULE_PARM_DESC(b44_debug, "B44 bitmapped debugging message enable value");
 
 
 #ifdef CONFIG_B44_PCI
-static DEFINE_PCI_DEVICE_TABLE(b44_pci_tbl) = {
+static const struct pci_device_id b44_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401B0) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401B1) },
@@ -2380,7 +2380,7 @@ static int b44_init_one(struct ssb_device *sdev,
 	netif_napi_add(dev, &bp->napi, b44_poll, 64);
 	dev->watchdog_timeo = B44_TX_TIMEOUT;
 	dev->irq = sdev->irq;
-	SET_ETHTOOL_OPS(dev, &b44_ethtool_ops);
+	dev->ethtool_ops = &b44_ethtool_ops;
 
 	err = ssb_bus_powerup(sdev->bus, 0);
 	if (err) {

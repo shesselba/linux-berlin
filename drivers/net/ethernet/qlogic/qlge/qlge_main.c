@@ -86,7 +86,7 @@ MODULE_PARM_DESC(qlge_force_coredump,
 		"Option to allow force of firmware core dump. "
 		"Default is OFF - Do not allow.");
 
-static DEFINE_PCI_DEVICE_TABLE(qlge_pci_tbl) = {
+static const struct pci_device_id qlge_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, QLGE_DEVICE_ID_8012)},
 	{PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, QLGE_DEVICE_ID_8000)},
 	/* required last entry */
@@ -2727,23 +2727,22 @@ static void ql_free_shadow_space(struct ql_adapter *qdev)
 static int ql_alloc_shadow_space(struct ql_adapter *qdev)
 {
 	qdev->rx_ring_shadow_reg_area =
-	    pci_alloc_consistent(qdev->pdev,
-				 PAGE_SIZE, &qdev->rx_ring_shadow_reg_dma);
+		pci_zalloc_consistent(qdev->pdev, PAGE_SIZE,
+				      &qdev->rx_ring_shadow_reg_dma);
 	if (qdev->rx_ring_shadow_reg_area == NULL) {
 		netif_err(qdev, ifup, qdev->ndev,
 			  "Allocation of RX shadow space failed.\n");
 		return -ENOMEM;
 	}
-	memset(qdev->rx_ring_shadow_reg_area, 0, PAGE_SIZE);
+
 	qdev->tx_ring_shadow_reg_area =
-	    pci_alloc_consistent(qdev->pdev, PAGE_SIZE,
-				 &qdev->tx_ring_shadow_reg_dma);
+		pci_zalloc_consistent(qdev->pdev, PAGE_SIZE,
+				      &qdev->tx_ring_shadow_reg_dma);
 	if (qdev->tx_ring_shadow_reg_area == NULL) {
 		netif_err(qdev, ifup, qdev->ndev,
 			  "Allocation of TX shadow space failed.\n");
 		goto err_wqp_sh_area;
 	}
-	memset(qdev->tx_ring_shadow_reg_area, 0, PAGE_SIZE);
 	return 0;
 
 err_wqp_sh_area:
@@ -3595,7 +3594,7 @@ static int ql_request_irq(struct ql_adapter *qdev)
 	}
 	return status;
 err_irq:
-	netif_err(qdev, ifup, qdev->ndev, "Failed to get the interrupts!!!/n");
+	netif_err(qdev, ifup, qdev->ndev, "Failed to get the interrupts!!!\n");
 	ql_free_irq(qdev);
 	return status;
 }
@@ -4770,7 +4769,7 @@ static int qlge_probe(struct pci_dev *pdev,
 	ndev->irq = pdev->irq;
 
 	ndev->netdev_ops = &qlge_netdev_ops;
-	SET_ETHTOOL_OPS(ndev, &qlge_ethtool_ops);
+	ndev->ethtool_ops = &qlge_ethtool_ops;
 	ndev->watchdog_timeo = 10 * HZ;
 
 	err = register_netdev(ndev);

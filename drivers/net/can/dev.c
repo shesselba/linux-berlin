@@ -256,7 +256,7 @@ static int can_get_bittiming(struct net_device *dev, struct can_bittiming *bt,
 
 	/* Check if the CAN device has bit-timing parameters */
 	if (!btc)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	/*
 	 * Depending on the given can_bittiming parameter structure the CAN
@@ -565,7 +565,7 @@ struct net_device *alloc_candev(int sizeof_priv, unsigned int echo_skb_max)
 	else
 		size = sizeof_priv;
 
-	dev = alloc_netdev(size, "can%d", can_setup);
+	dev = alloc_netdev(size, "can%d", NET_NAME_UNKNOWN, can_setup);
 	if (!dev)
 		return NULL;
 

@@ -46,7 +46,7 @@ static const char e1000_copyright[] = "Copyright (c) 1999-2006 Intel Corporation
  * Macro expands to...
  *   {PCI_DEVICE(PCI_VENDOR_ID_INTEL, device_id)}
  */
-static DEFINE_PCI_DEVICE_TABLE(e1000_pci_tbl) = {
+static const struct pci_device_id e1000_pci_tbl[] = {
 	INTEL_E1000_ETHERNET_DEVICE(0x1000),
 	INTEL_E1000_ETHERNET_DEVICE(0x1001),
 	INTEL_E1000_ETHERNET_DEVICE(0x1004),
@@ -3104,11 +3104,6 @@ static netdev_tx_t e1000_xmit_frame(struct sk_buff *skb,
 	 * single qdisc implementation, we can look at this again.
 	 */
 	tx_ring = adapter->tx_ring;
-
-	if (unlikely(skb->len <= 0)) {
-		dev_kfree_skb_any(skb);
-		return NETDEV_TX_OK;
-	}
 
 	/* On PCI/PCI-X HW, if packet size is less than ETH_ZLEN,
 	 * packets may get corrupted during padding by HW.

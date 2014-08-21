@@ -78,7 +78,7 @@ static ssize_t kernel_version_show(struct device *dev,
 	return sprintf(page, "0x%x\n", COUNTER_INFO_VERSION_CURRENT);
 }
 
-DEVICE_ATTR_RO(kernel_version);
+static DEVICE_ATTR_RO(kernel_version);
 HV_CAPS_ATTR(version, "0x%x\n");
 HV_CAPS_ATTR(ga, "%d\n");
 HV_CAPS_ATTR(expanded, "%d\n");
@@ -210,8 +210,7 @@ static int h_gpci_event_init(struct perf_event *event)
 	    event->attr.exclude_hv     ||
 	    event->attr.exclude_idle   ||
 	    event->attr.exclude_host   ||
-	    event->attr.exclude_guest  ||
-	    is_sampling_event(event)) /* no sampling */
+	    event->attr.exclude_guest)
 		return -EINVAL;
 
 	/* no branch sampling */
@@ -273,16 +272,19 @@ static int hv_gpci_init(void)
 	struct hv_perf_caps caps;
 
 	if (!firmware_has_feature(FW_FEATURE_LPAR)) {
-		pr_info("not a virtualized system, not enabling\n");
+		pr_debug("not a virtualized system, not enabling\n");
 		return -ENODEV;
 	}
 
 	hret = hv_perf_caps_get(&caps);
 	if (hret) {
-		pr_info("could not obtain capabilities, error 0x%80lx, not enabling\n",
+		pr_debug("could not obtain capabilities, not enabling, rc=%ld\n",
 				hret);
 		return -ENODEV;
 	}
+
+	/* sampling not supported */
+	h_gpci_pmu.capabilities |= PERF_PMU_CAP_NO_INTERRUPT;
 
 	r = perf_pmu_register(&h_gpci_pmu, h_gpci_pmu.name, -1);
 	if (r)

@@ -77,14 +77,16 @@ void acpi_initialize_hp_context(struct acpi_device *adev,
 				void (*uevent)(struct acpi_device *, u32))
 {
 	acpi_lock_hp_context();
-	acpi_set_hp_context(adev, hp, notify, uevent, NULL);
+	hp->notify = notify;
+	hp->uevent = uevent;
+	acpi_set_hp_context(adev, hp);
 	acpi_unlock_hp_context();
 }
 EXPORT_SYMBOL_GPL(acpi_initialize_hp_context);
 
 int acpi_scan_add_handler(struct acpi_scan_handler *handler)
 {
-	if (!handler || !handler->attach)
+	if (!handler)
 		return -EINVAL;
 
 	list_add_tail(&handler->list_node, &acpi_scan_handlers_list);
@@ -351,7 +353,8 @@ static int acpi_scan_hot_remove(struct acpi_device *device)
 	unsigned long long sta;
 	acpi_status status;
 
-	if (device->handler->hotplug.demand_offline && !acpi_force_hot_remove) {
+	if (device->handler && device->handler->hotplug.demand_offline
+	    && !acpi_force_hot_remove) {
 		if (!acpi_scan_is_offline(device, true))
 			return -EBUSY;
 	} else {
@@ -1421,14 +1424,13 @@ static int acpi_bus_extract_wakeup_device_power_package(acpi_handle handle,
 			wakeup->sleep_state = sleep_state;
 		}
 	}
-	acpi_setup_gpe_for_wake(handle, wakeup->gpe_device, wakeup->gpe_number);
 
  out:
 	kfree(buffer.pointer);
 	return err;
 }
 
-static void acpi_bus_set_run_wake_flags(struct acpi_device *device)
+static void acpi_wakeup_gpe_init(struct acpi_device *device)
 {
 	struct acpi_device_id button_device_ids[] = {
 		{"PNP0C0C", 0},
@@ -1436,29 +1438,33 @@ static void acpi_bus_set_run_wake_flags(struct acpi_device *device)
 		{"PNP0C0E", 0},
 		{"", 0},
 	};
+	struct acpi_device_wakeup *wakeup = &device->wakeup;
 	acpi_status status;
 	acpi_event_status event_status;
 
-	device->wakeup.flags.notifier_present = 0;
+	wakeup->flags.notifier_present = 0;
 
 	/* Power button, Lid switch always enable wakeup */
 	if (!acpi_match_device_ids(device, button_device_ids)) {
-		device->wakeup.flags.run_wake = 1;
+		wakeup->flags.run_wake = 1;
 		if (!acpi_match_device_ids(device, &button_device_ids[1])) {
 			/* Do not use Lid/sleep button for S5 wakeup */
-			if (device->wakeup.sleep_state == ACPI_STATE_S5)
-				device->wakeup.sleep_state = ACPI_STATE_S4;
+			if (wakeup->sleep_state == ACPI_STATE_S5)
+				wakeup->sleep_state = ACPI_STATE_S4;
 		}
+		acpi_mark_gpe_for_wake(wakeup->gpe_device, wakeup->gpe_number);
 		device_set_wakeup_capable(&device->dev, true);
 		return;
 	}
 
-	status = acpi_get_gpe_status(device->wakeup.gpe_device,
-					device->wakeup.gpe_number,
-						&event_status);
-	if (status == AE_OK)
-		device->wakeup.flags.run_wake =
-				!!(event_status & ACPI_EVENT_FLAG_HANDLE);
+	acpi_setup_gpe_for_wake(device->handle, wakeup->gpe_device,
+				wakeup->gpe_number);
+	status = acpi_get_gpe_status(wakeup->gpe_device, wakeup->gpe_number,
+				     &event_status);
+	if (ACPI_FAILURE(status))
+		return;
+
+	wakeup->flags.run_wake = !!(event_status & ACPI_EVENT_FLAG_HANDLE);
 }
 
 static void acpi_bus_get_wakeup_device_flags(struct acpi_device *device)
@@ -1478,7 +1484,7 @@ static void acpi_bus_get_wakeup_device_flags(struct acpi_device *device)
 
 	device->wakeup.flags.valid = 1;
 	device->wakeup.prepare_count = 0;
-	acpi_bus_set_run_wake_flags(device);
+	acpi_wakeup_gpe_init(device);
 	/* Call _PSW/_DSW object to disable its ability to wake the sleeping
 	 * system for the ACPI device with the _PRW object.
 	 * The _PSW object is depreciated in ACPI 3.0 and is replaced by _DSW.
@@ -1551,8 +1557,12 @@ static void acpi_bus_get_power_flags(struct acpi_device *device)
 	 */
 	if (acpi_has_method(device->handle, "_PSC"))
 		device->power.flags.explicit_get = 1;
+
 	if (acpi_has_method(device->handle, "_IRC"))
 		device->power.flags.inrush_current = 1;
+
+	if (acpi_has_method(device->handle, "_DSW"))
+		device->power.flags.dsw_present = 1;
 
 	/*
 	 * Enumerate supported power management states
@@ -1793,8 +1803,10 @@ static void acpi_set_pnp_ids(acpi_handle handle, struct acpi_device_pnp *pnp,
 			return;
 		}
 
-		if (info->valid & ACPI_VALID_HID)
+		if (info->valid & ACPI_VALID_HID) {
 			acpi_add_id(pnp, info->hardware_id.string);
+			pnp->type.platform_id = 1;
+		}
 		if (info->valid & ACPI_VALID_CID) {
 			cid_list = &info->compatible_id_list;
 			for (i = 0; i < cid_list->count; i++)
@@ -1973,6 +1985,9 @@ static bool acpi_scan_handler_matching(struct acpi_scan_handler *handler,
 {
 	const struct acpi_device_id *devid;
 
+	if (handler->match)
+		return handler->match(idstr, matchid);
+
 	for (devid = handler->ids; devid->id[0]; devid++)
 		if (!strcmp((char *)devid->id, idstr)) {
 			if (matchid)
@@ -2061,6 +2076,44 @@ static acpi_status acpi_bus_check_add(acpi_handle handle, u32 lvl_not_used,
 	return AE_OK;
 }
 
+static int acpi_check_spi_i2c_slave(struct acpi_resource *ares, void *data)
+{
+	bool *is_spi_i2c_slave_p = data;
+
+	if (ares->type != ACPI_RESOURCE_TYPE_SERIAL_BUS)
+		return 1;
+
+	/*
+	 * devices that are connected to UART still need to be enumerated to
+	 * platform bus
+	 */
+	if (ares->data.common_serial_bus.type != ACPI_RESOURCE_SERIAL_TYPE_UART)
+		*is_spi_i2c_slave_p = true;
+
+	 /* no need to do more checking */
+	return -1;
+}
+
+static void acpi_default_enumeration(struct acpi_device *device)
+{
+	struct list_head resource_list;
+	bool is_spi_i2c_slave = false;
+
+	if (!device->pnp.type.platform_id || device->handler)
+		return;
+
+	/*
+	 * Do not enemerate SPI/I2C slaves as they will be enuerated by their
+	 * respective parents.
+	 */
+	INIT_LIST_HEAD(&resource_list);
+	acpi_dev_get_resources(device, &resource_list, acpi_check_spi_i2c_slave,
+			       &is_spi_i2c_slave);
+	acpi_dev_free_resource_list(&resource_list);
+	if (!is_spi_i2c_slave)
+		acpi_create_platform_device(device);
+}
+
 static int acpi_scan_attach_handler(struct acpi_device *device)
 {
 	struct acpi_hardware_id *hwid;
@@ -2072,6 +2125,10 @@ static int acpi_scan_attach_handler(struct acpi_device *device)
 
 		handler = acpi_scan_match_handler(hwid->id, &devid);
 		if (handler) {
+			if (!handler->attach) {
+				device->pnp.type.platform_id = 0;
+				continue;
+			}
 			device->handler = handler;
 			ret = handler->attach(device, devid);
 			if (ret > 0)
@@ -2082,6 +2139,9 @@ static int acpi_scan_attach_handler(struct acpi_device *device)
 				break;
 		}
 	}
+	if (!ret)
+		acpi_default_enumeration(device);
+
 	return ret;
 }
 
@@ -2241,11 +2301,11 @@ int __init acpi_scan_init(void)
 	acpi_pci_root_init();
 	acpi_pci_link_init();
 	acpi_processor_init();
-	acpi_platform_init();
 	acpi_lpss_init();
 	acpi_cmos_rtc_init();
 	acpi_container_init();
 	acpi_memory_hotplug_init();
+	acpi_pnp_init();
 
 	mutex_lock(&acpi_scan_lock);
 	/*
@@ -2259,12 +2319,16 @@ int __init acpi_scan_init(void)
 	if (result)
 		goto out;
 
-	result = acpi_bus_scan_fixed();
-	if (result) {
-		acpi_detach_data(acpi_root->handle, acpi_scan_drop_device);
-		acpi_device_del(acpi_root);
-		put_device(&acpi_root->dev);
-		goto out;
+	/* Fixed feature devices do not exist on HW-reduced platform */
+	if (!acpi_gbl_reduced_hardware) {
+		result = acpi_bus_scan_fixed();
+		if (result) {
+			acpi_detach_data(acpi_root->handle,
+					 acpi_scan_drop_device);
+			acpi_device_del(acpi_root);
+			put_device(&acpi_root->dev);
+			goto out;
+		}
 	}
 
 	acpi_update_all_gpes();

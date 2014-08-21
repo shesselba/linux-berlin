@@ -249,7 +249,7 @@ bnad_tx_complete(struct bnad *bnad, struct bna_tcb *tcb)
 	if (likely(test_bit(BNAD_TXQ_TX_STARTED, &tcb->flags)))
 		bna_ib_ack(tcb->i_dbell, sent);
 
-	smp_mb__before_clear_bit();
+	smp_mb__before_atomic();
 	clear_bit(BNAD_TXQ_FREE_SENT, &tcb->flags);
 
 	return sent;
@@ -600,9 +600,9 @@ bnad_cq_process(struct bnad *bnad, struct bna_ccb *ccb, int budget)
 	prefetch(bnad->netdev);
 
 	cq = ccb->sw_q;
-	cmpl = &cq[ccb->producer_index];
 
 	while (packets < budget) {
+		cmpl = &cq[ccb->producer_index];
 		if (!cmpl->valid)
 			break;
 		/* The 'valid' field is set by the adapter, only after writing
@@ -1126,7 +1126,7 @@ bnad_tx_cleanup(struct delayed_work *work)
 
 		bnad_txq_cleanup(bnad, tcb);
 
-		smp_mb__before_clear_bit();
+		smp_mb__before_atomic();
 		clear_bit(BNAD_TXQ_FREE_SENT, &tcb->flags);
 	}
 
@@ -2992,7 +2992,7 @@ bnad_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 			sent = bnad_txcmpl_process(bnad, tcb);
 			if (likely(test_bit(BNAD_TXQ_TX_STARTED, &tcb->flags)))
 				bna_ib_ack(tcb->i_dbell, sent);
-			smp_mb__before_clear_bit();
+			smp_mb__before_atomic();
 			clear_bit(BNAD_TXQ_FREE_SENT, &tcb->flags);
 		} else {
 			netif_stop_queue(netdev);
@@ -3836,7 +3836,7 @@ bnad_pci_remove(struct pci_dev *pdev)
 	free_netdev(netdev);
 }
 
-static DEFINE_PCI_DEVICE_TABLE(bnad_pci_id_table) = {
+static const struct pci_device_id bnad_pci_id_table[] = {
 	{
 		PCI_DEVICE(PCI_VENDOR_ID_BROCADE,
 			PCI_DEVICE_ID_BROCADE_CT),

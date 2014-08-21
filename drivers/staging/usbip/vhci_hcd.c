@@ -304,7 +304,7 @@ static int vhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 		break;
 	case GetHubStatus:
 		usbip_dbg_vhci_rh(" GetHubStatus\n");
-		*(__le32 *) buf = __constant_cpu_to_le32(0);
+		*(__le32 *) buf = cpu_to_le32(0);
 		break;
 	case GetPortStatus:
 		usbip_dbg_vhci_rh(" GetPortStatus port %x\n", wIndex);
@@ -635,6 +635,7 @@ static int vhci_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 
 	{
 		int ret = 0;
+
 		ret = usb_hcd_check_unlink_urb(hcd, urb, status);
 		if (ret) {
 			spin_unlock(&the_controller->lock);
@@ -885,6 +886,7 @@ static int vhci_start(struct usb_hcd *hcd)
 
 	for (rhport = 0; rhport < VHCI_NPORTS; rhport++) {
 		struct vhci_device *vdev = &vhci->vdev[rhport];
+
 		vhci_device_init(vdev);
 		vdev->rhport = rhport;
 	}
@@ -1119,7 +1121,6 @@ static struct platform_driver vhci_driver = {
  */
 static void the_pdev_release(struct device *dev)
 {
-	return;
 }
 
 static struct platform_device the_pdev = {

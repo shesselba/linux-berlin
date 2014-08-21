@@ -314,8 +314,8 @@ static ssize_t ltc2945_reset_history(struct device *dev,
 		reg = LTC2945_MAX_ADIN_H;
 		break;
 	default:
-		BUG();
-		break;
+		WARN_ONCE(1, "Bad register: 0x%x\n", reg);
+		return -EINVAL;
 	}
 	/* Reset maximum */
 	ret = regmap_bulk_write(regmap, reg, buf_max, num_regs);
@@ -469,7 +469,7 @@ static struct attribute *ltc2945_attrs[] = {
 };
 ATTRIBUTE_GROUPS(ltc2945);
 
-static struct regmap_config ltc2945_regmap_config = {
+static const struct regmap_config ltc2945_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
 	.max_register = LTC2945_MIN_ADIN_THRES_L,

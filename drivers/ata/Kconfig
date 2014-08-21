@@ -16,6 +16,7 @@ menuconfig ATA
 	depends on BLOCK
 	depends on !(M32R || M68K || S390) || BROKEN
 	select SCSI
+	select GLOB
 	---help---
 	  If you want to use an ATA hard disk, ATA tape drive, ATA CD-ROM or
 	  any other ATA device under Linux, say Y and make sure that you know
@@ -116,9 +117,18 @@ config AHCI_ST
 
 config AHCI_IMX
 	tristate "Freescale i.MX AHCI SATA support"
-	depends on MFD_SYSCON
+	depends on MFD_SYSCON && (ARCH_MXC || COMPILE_TEST)
 	help
 	  This option enables support for the Freescale i.MX SoC's
+	  onboard AHCI SATA.
+
+	  If unsure, say N.
+
+config AHCI_MVEBU
+	tristate "Marvell EBU AHCI SATA support"
+	depends on ARCH_MVEBU
+	help
+	  This option enables support for the Marvebu EBU SoC's
 	  onboard AHCI SATA.
 
 	  If unsure, say N.
@@ -132,10 +142,18 @@ config AHCI_SUNXI
 
 	  If unsure, say N.
 
+config AHCI_TEGRA
+	tristate "NVIDIA Tegra124 AHCI SATA support"
+	depends on ARCH_TEGRA
+	help
+	  This option enables support for the NVIDIA Tegra124 SoC's
+	  onboard AHCI SATA.
+
+	  If unsure, say N.
+
 config AHCI_XGENE
 	tristate "APM X-Gene 6.0Gbps AHCI SATA host controller support"
-	depends on ARM64 || COMPILE_TEST
-	select PHY_XGENE
+	depends on PHY_XGENE
 	help
 	 This option enables support for APM X-Gene SoC SATA host controller.
 
@@ -816,7 +834,7 @@ config PATA_AT32
 
 config PATA_AT91
 	tristate "PATA support for AT91SAM9260"
-	depends on ARM && ARCH_AT91
+	depends on ARM && SOC_AT91SAM9
 	help
 	  This option enables support for IDE devices on the Atmel AT91SAM9260 SoC.
 

@@ -945,10 +945,10 @@ int rtsx_pci_transfer_data(struct rtsx_pcr *pcr, struct scatterlist *sglist,
 		int num_sg, bool read, int timeout);
 int rtsx_pci_dma_map_sg(struct rtsx_pcr *pcr, struct scatterlist *sglist,
 		int num_sg, bool read);
-int rtsx_pci_dma_unmap_sg(struct rtsx_pcr *pcr, struct scatterlist *sglist,
+void rtsx_pci_dma_unmap_sg(struct rtsx_pcr *pcr, struct scatterlist *sglist,
 		int num_sg, bool read);
 int rtsx_pci_dma_transfer(struct rtsx_pcr *pcr, struct scatterlist *sglist,
-		int sg_count, bool read);
+		int count, bool read, int timeout);
 int rtsx_pci_read_ppbuf(struct rtsx_pcr *pcr, u8 *buf, int buf_len);
 int rtsx_pci_write_ppbuf(struct rtsx_pcr *pcr, u8 *buf, int buf_len);
 int rtsx_pci_card_pull_ctl_enable(struct rtsx_pcr *pcr, int card);

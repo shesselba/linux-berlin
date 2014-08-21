@@ -244,9 +244,9 @@ static int hspi_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	clk = clk_get(NULL, "shyway_clk");
+	clk = clk_get(&pdev->dev, NULL);
 	if (IS_ERR(clk)) {
-		dev_err(&pdev->dev, "shyway_clk is required\n");
+		dev_err(&pdev->dev, "couldn't get clock\n");
 		ret = -EINVAL;
 		goto error0;
 	}
@@ -304,7 +304,7 @@ static int hspi_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct of_device_id hspi_of_match[] = {
+static const struct of_device_id hspi_of_match[] = {
 	{ .compatible = "renesas,hspi", },
 	{ /* sentinel */ }
 };

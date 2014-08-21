@@ -6,6 +6,7 @@
 #include <linux/pci.h>
 #include <linux/init.h>
 #include <linux/vgaarb.h>
+#include <linux/screen_info.h>
 
 #include <asm/machvec.h>
 
@@ -37,6 +38,27 @@ static void pci_fixup_video(struct pci_dev *pdev)
 		return;
 	/* Maybe, this machine supports legacy memory map. */
 
+	if (!vga_default_device()) {
+		resource_size_t start, end;
+		int i;
+
+		/* Does firmware framebuffer belong to us? */
+		for (i = 0; i < DEVICE_COUNT_RESOURCE; i++) {
+			if (!(pci_resource_flags(pdev, i) & IORESOURCE_MEM))
+				continue;
+
+			start = pci_resource_start(pdev, i);
+			end  = pci_resource_end(pdev, i);
+
+			if (!start || !end)
+				continue;
+
+			if (screen_info.lfb_base >= start &&
+			    (screen_info.lfb_base + screen_info.lfb_size) < end)
+				vga_set_default_device(pdev);
+		}
+	}
+
 	/* Is VGA routed to us? */
 	bus = pdev->bus;
 	while (bus) {
@@ -49,9 +71,7 @@ static void pci_fixup_video(struct pci_dev *pdev)
 		 * type BRIDGE, or CARDBUS. Host to PCI controllers use
 		 * PCI header type NORMAL.
 		 */
-		if (bridge
-		    &&((bridge->hdr_type == PCI_HEADER_TYPE_BRIDGE)
-		       ||(bridge->hdr_type == PCI_HEADER_TYPE_CARDBUS))) {
+		if (bridge && (pci_is_bridge(bridge))) {
 			pci_read_config_word(bridge, PCI_BRIDGE_CONTROL,
 						&config);
 			if (!(config & PCI_BRIDGE_CTL_VGA))

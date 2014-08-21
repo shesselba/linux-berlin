@@ -1,6 +1,7 @@
-/* bnx2.c: Broadcom NX2 network driver.
+/* bnx2.c: QLogic NX2 network driver.
  *
- * Copyright (c) 2004-2013 Broadcom Corporation
+ * Copyright (c) 2004-2014 Broadcom Corporation
+ * Copyright (c) 2014 QLogic Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -71,10 +72,10 @@
 #define TX_TIMEOUT  (5*HZ)
 
 static char version[] =
-	"Broadcom NetXtreme II Gigabit Ethernet Driver " DRV_MODULE_NAME " v" DRV_MODULE_VERSION " (" DRV_MODULE_RELDATE ")\n";
+	"QLogic NetXtreme II Gigabit Ethernet Driver " DRV_MODULE_NAME " v" DRV_MODULE_VERSION " (" DRV_MODULE_RELDATE ")\n";
 
 MODULE_AUTHOR("Michael Chan <mchan@broadcom.com>");
-MODULE_DESCRIPTION("Broadcom NetXtreme II BCM5706/5708/5709/5716 Driver");
+MODULE_DESCRIPTION("QLogic NetXtreme II BCM5706/5708/5709/5716 Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_MODULE_VERSION);
 MODULE_FIRMWARE(FW_MIPS_FILE_06);
@@ -119,7 +120,7 @@ static struct {
 	{ "Broadcom NetXtreme II BCM5716 1000Base-SX" },
 	};
 
-static DEFINE_PCI_DEVICE_TABLE(bnx2_pci_tbl) = {
+static const struct pci_device_id bnx2_pci_tbl[] = {
 	{ PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_NX2_5706,
 	  PCI_VENDOR_ID_HP, 0x3101, 0, 0, NC370T },
 	{ PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_NX2_5706,
@@ -6916,8 +6917,8 @@ bnx2_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 		}
 	}
 	else {
-		ethtool_cmd_speed_set(cmd, -1);
-		cmd->duplex = -1;
+		ethtool_cmd_speed_set(cmd, SPEED_UNKNOWN);
+		cmd->duplex = DUPLEX_UNKNOWN;
 	}
 	spin_unlock_bh(&bp->phy_lock);
 
@@ -8627,6 +8628,7 @@ bnx2_remove_one(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
+#ifdef CONFIG_PM_SLEEP
 static int
 bnx2_suspend(struct device *device)
 {
@@ -8665,7 +8667,6 @@ bnx2_resume(struct device *device)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
 static SIMPLE_DEV_PM_OPS(bnx2_pm_ops, bnx2_suspend, bnx2_resume);
 #define BNX2_PM_OPS (&bnx2_pm_ops)
 

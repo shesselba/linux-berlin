@@ -285,7 +285,7 @@ struct fbr_lookup {
 	dma_addr_t	 buffsize;
 };
 
-/* struct rx_ring is the sructure representing the adaptor's local
+/* struct rx_ring is the structure representing the adaptor's local
  * reference(s) to the rings
  */
 struct rx_ring {
@@ -532,8 +532,6 @@ struct et131x_adapter {
 
 	/* Stats */
 	struct ce_stats stats;
-
-	struct net_device_stats net_stats;
 };
 
 static int eeprom_wait_ready(struct pci_dev *pdev, u32 *status)
@@ -762,6 +760,7 @@ static int et131x_init_eeprom(struct et131x_adapter *adapter)
 	 */
 	if (eestatus & 0x4C) {
 		int write_failed = 0;
+
 		if (pdev->revision == 0x01) {
 			int	i;
 			static const u8 eedata[4] = { 0xFE, 0x13, 0x10, 0xFF };
@@ -1942,7 +1941,7 @@ static void et131x_disable_interrupts(struct et131x_adapter *adapter)
 /* et131x_tx_dma_disable - Stop of Tx_DMA on the ET1310 */
 static void et131x_tx_dma_disable(struct et131x_adapter *adapter)
 {
-	/* Setup the tramsmit dma configuration register */
+	/* Setup the transmit dma configuration register */
 	writel(ET_TXDMA_CSR_HALT | ET_TXDMA_SNGL_EPKT,
 					&adapter->regs->txdma.csr);
 }
@@ -2091,6 +2090,7 @@ static void et1310_disable_phy_coma(struct et131x_adapter *adapter)
 static inline u32 bump_free_buff_ring(u32 *free_buff_ring, u32 limit)
 {
 	u32 tmp_free_buff_ring = *free_buff_ring;
+
 	tmp_free_buff_ring++;
 	/* This works for all cases where limit < 1024. The 1023 case
 	 * works because 1023++ is 1024 which means the if condition is not
@@ -2616,7 +2616,7 @@ static struct rfd *nic_rx_pkts(struct et131x_adapter *adapter)
 		return NULL;
 	}
 
-	adapter->net_stats.rx_bytes += rfd->len;
+	adapter->netdev->stats.rx_bytes += rfd->len;
 
 	memcpy(skb_put(skb, rfd->len), fbr->virt[buff_index], rfd->len);
 
@@ -2664,7 +2664,7 @@ static void et131x_handle_recv_interrupt(struct et131x_adapter *adapter)
 			continue;
 
 		/* Increment the number of packets we received */
-		adapter->net_stats.rx_packets++;
+		adapter->netdev->stats.rx_packets++;
 
 		/* Set the status on the packet, either resources or success */
 		if (rx_ring->num_ready_recv < RFD_LOW_WATER_MARK)
@@ -3035,7 +3035,7 @@ static int et131x_send_packets(struct sk_buff *skb, struct net_device *netdev)
 			dev_kfree_skb_any(skb);
 			skb = NULL;
 
-			adapter->net_stats.tx_dropped++;
+			adapter->netdev->stats.tx_dropped++;
 		} else {
 			status = send_packet(skb, adapter);
 			if (status != 0 && status != -ENOMEM) {
@@ -3044,7 +3044,7 @@ static int et131x_send_packets(struct sk_buff *skb, struct net_device *netdev)
 				 */
 				dev_kfree_skb_any(skb);
 				skb = NULL;
-				adapter->net_stats.tx_dropped++;
+				adapter->netdev->stats.tx_dropped++;
 			}
 		}
 	}
@@ -3063,7 +3063,7 @@ static inline void free_send_packet(struct et131x_adapter *adapter,
 {
 	unsigned long flags;
 	struct tx_desc *desc = NULL;
-	struct net_device_stats *stats = &adapter->net_stats;
+	struct net_device_stats *stats = &adapter->netdev->stats;
 	struct tx_ring *tx_ring = &adapter->tx_ring;
 	u64  dma_addr;
 
@@ -3108,7 +3108,7 @@ static inline void free_send_packet(struct et131x_adapter *adapter,
 	/* Add the TCB to the Ready Q */
 	spin_lock_irqsave(&adapter->tcb_ready_qlock, flags);
 
-	adapter->net_stats.tx_packets++;
+	stats->tx_packets++;
 
 	if (tx_ring->tcb_qtail)
 		tx_ring->tcb_qtail->next = tcb;
@@ -4023,7 +4023,7 @@ static void et131x_isr_handler(struct work_struct *work)
 	if (status & ET_INTR_RXDMA_STAT_LOW) {
 		/* Same idea as with the two Free Buffer Rings. Packets going
 		 * from the network to the host each consume a free buffer
-		 * resource and a packet status resource. These resoures are
+		 * resource and a packet status resource. These resources are
 		 * passed to the OS. When the OS is done with the resources,
 		 * they need to be returned to the ET1310. This is one method
 		 * of returning the resources.
@@ -4132,7 +4132,7 @@ out:
 static struct net_device_stats *et131x_stats(struct net_device *netdev)
 {
 	struct et131x_adapter *adapter = netdev_priv(netdev);
-	struct net_device_stats *stats = &adapter->net_stats;
+	struct net_device_stats *stats = &adapter->netdev->stats;
 	struct ce_stats *devstat = &adapter->stats;
 
 	stats->rx_errors = devstat->rx_length_errs +
@@ -4237,7 +4237,6 @@ static int et131x_ioctl(struct net_device *netdev, struct ifreq *reqbuf,
 static int et131x_set_packet_filter(struct et131x_adapter *adapter)
 {
 	int filter = adapter->packet_filter;
-	int status = 0;
 	u32 ctrl;
 	u32 pf_ctrl;
 
@@ -4288,7 +4287,7 @@ static int et131x_set_packet_filter(struct et131x_adapter *adapter)
 		writel(pf_ctrl, &adapter->regs->rxmac.pf_ctrl);
 		writel(ctrl, &adapter->regs->rxmac.ctrl);
 	}
-	return status;
+	return 0;
 }
 
 /* et131x_multicast - The handler to configure multicasting on the interface */
@@ -4425,7 +4424,7 @@ static void et131x_tx_timeout(struct net_device *netdev)
 				tcb->index,
 				tcb->flags);
 
-			adapter->net_stats.tx_errors++;
+			adapter->netdev->stats.tx_errors++;
 
 			/* perform reset of tx/rx */
 			et131x_disable_txrx(netdev);
@@ -4604,7 +4603,7 @@ static int et131x_pci_setup(struct pci_dev *pdev,
 	netdev->netdev_ops     = &et131x_netdev_ops;
 
 	SET_NETDEV_DEV(netdev, &pdev->dev);
-	SET_ETHTOOL_OPS(netdev, &et131x_ethtool_ops);
+	netdev->ethtool_ops = &et131x_ethtool_ops;
 
 	adapter = et131x_adapter_init(netdev, pdev);
 
@@ -4632,7 +4631,7 @@ static int et131x_pci_setup(struct pci_dev *pdev,
 	/* Allocate DMA memory */
 	rc = et131x_adapter_memory_alloc(adapter);
 	if (rc < 0) {
-		dev_err(&pdev->dev, "Could not alloc adapater memory (DMA)\n");
+		dev_err(&pdev->dev, "Could not alloc adapter memory (DMA)\n");
 		goto err_iounmap;
 	}
 

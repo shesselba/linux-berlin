@@ -179,6 +179,7 @@ enum {
 	MLX5_DEV_CAP_FLAG_BAD_QKEY_CNTR	= 1LL <<  9,
 	MLX5_DEV_CAP_FLAG_APM		= 1LL << 17,
 	MLX5_DEV_CAP_FLAG_ATOMIC	= 1LL << 18,
+	MLX5_DEV_CAP_FLAG_BLOCK_MCAST	= 1LL << 23,
 	MLX5_DEV_CAP_FLAG_ON_DMND_PG	= 1LL << 24,
 	MLX5_DEV_CAP_FLAG_CQ_MODER	= 1LL << 29,
 	MLX5_DEV_CAP_FLAG_RESIZE_CQ	= 1LL << 30,
@@ -455,9 +456,6 @@ struct mlx5_eqe_cq_err {
 	u8	syndrome;
 };
 
-struct mlx5_eqe_dropped_packet {
-};
-
 struct mlx5_eqe_port_state {
 	u8	reserved0[8];
 	u8	port;
@@ -497,7 +495,6 @@ union ev_data {
 	struct mlx5_eqe_comp		comp;
 	struct mlx5_eqe_qp_srq		qp_srq;
 	struct mlx5_eqe_cq_err		cq_err;
-	struct mlx5_eqe_dropped_packet	dp;
 	struct mlx5_eqe_port_state	port;
 	struct mlx5_eqe_gpio		gpio;
 	struct mlx5_eqe_congestion	cong;

@@ -580,7 +580,7 @@ err_dir:
 static struct dma_async_tx_descriptor *
 sirfsoc_dma_prep_cyclic(struct dma_chan *chan, dma_addr_t addr,
 	size_t buf_len, size_t period_len,
-	enum dma_transfer_direction direction, unsigned long flags, void *context)
+	enum dma_transfer_direction direction, unsigned long flags)
 {
 	struct sirfsoc_dma_chan *schan = dma_chan_to_sirfsoc_dma_chan(chan);
 	struct sirfsoc_dma_desc *sdesc = NULL;
@@ -666,7 +666,7 @@ static struct dma_chan *of_dma_sirfsoc_xlate(struct of_phandle_args *dma_spec,
 	struct sirfsoc_dma *sdma = ofdma->of_dma_data;
 	unsigned int request = dma_spec->args[0];
 
-	if (request > SIRFSOC_DMA_CHANNELS)
+	if (request >= SIRFSOC_DMA_CHANNELS)
 		return NULL;
 
 	return dma_get_slave_channel(&sdma->channels[request].chan);

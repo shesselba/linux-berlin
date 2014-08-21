@@ -796,7 +796,9 @@ struct drm_radeon_gem_info {
 	uint64_t	vram_visible;
 };
 
-#define RADEON_GEM_NO_BACKING_STORE 1
+#define RADEON_GEM_NO_BACKING_STORE	(1 << 0)
+#define RADEON_GEM_GTT_UC		(1 << 1)
+#define RADEON_GEM_GTT_WC		(1 << 2)
 
 struct drm_radeon_gem_create {
 	uint64_t	size;
@@ -1007,7 +1009,7 @@ struct drm_radeon_cs {
 #define RADEON_INFO_NUM_BYTES_MOVED	0x1d
 #define RADEON_INFO_VRAM_USAGE		0x1e
 #define RADEON_INFO_GTT_USAGE		0x1f
-
+#define RADEON_INFO_ACTIVE_CU_COUNT	0x20
 
 struct drm_radeon_info {
 	uint32_t		request;

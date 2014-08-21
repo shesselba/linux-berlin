@@ -19,6 +19,7 @@
 #ifndef __ASM_TLB_H
 #define __ASM_TLB_H
 
+#define  __tlb_remove_pmd_tlb_entry __tlb_remove_pmd_tlb_entry
 
 #include <asm-generic/tlb.h>
 
@@ -90,7 +91,7 @@ static inline void __pte_free_tlb(struct mmu_gather *tlb, pgtable_t pte,
 	tlb_remove_page(tlb, pte);
 }
 
-#ifndef CONFIG_ARM64_64K_PAGES
+#if CONFIG_ARM64_PGTABLE_LEVELS > 2
 static inline void __pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmdp,
 				  unsigned long addr)
 {
@@ -99,5 +100,19 @@ static inline void __pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmdp,
 }
 #endif
 
+#if CONFIG_ARM64_PGTABLE_LEVELS > 3
+static inline void __pud_free_tlb(struct mmu_gather *tlb, pud_t *pudp,
+				  unsigned long addr)
+{
+	tlb_add_flush(tlb, addr);
+	tlb_remove_page(tlb, virt_to_page(pudp));
+}
+#endif
+
+static inline void __tlb_remove_pmd_tlb_entry(struct mmu_gather *tlb, pmd_t *pmdp,
+						unsigned long address)
+{
+	tlb_add_flush(tlb, address);
+}
 
 #endif

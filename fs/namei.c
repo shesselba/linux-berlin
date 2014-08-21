@@ -332,10 +332,11 @@ int generic_permission(struct inode *inode, int mask)
 
 	if (S_ISDIR(inode->i_mode)) {
 		/* DACs are overridable for directories */
-		if (inode_capable(inode, CAP_DAC_OVERRIDE))
+		if (capable_wrt_inode_uidgid(inode, CAP_DAC_OVERRIDE))
 			return 0;
 		if (!(mask & MAY_WRITE))
-			if (inode_capable(inode, CAP_DAC_READ_SEARCH))
+			if (capable_wrt_inode_uidgid(inode,
+						     CAP_DAC_READ_SEARCH))
 				return 0;
 		return -EACCES;
 	}
@@ -345,7 +346,7 @@ int generic_permission(struct inode *inode, int mask)
 	 * at least one exec bit set.
 	 */
 	if (!(mask & MAY_EXEC) || (inode->i_mode & S_IXUGO))
-		if (inode_capable(inode, CAP_DAC_OVERRIDE))
+		if (capable_wrt_inode_uidgid(inode, CAP_DAC_OVERRIDE))
 			return 0;
 
 	/*
@@ -353,7 +354,7 @@ int generic_permission(struct inode *inode, int mask)
 	 */
 	mask &= MAY_READ | MAY_WRITE | MAY_EXEC;
 	if (mask == MAY_READ)
-		if (inode_capable(inode, CAP_DAC_READ_SEARCH))
+		if (capable_wrt_inode_uidgid(inode, CAP_DAC_READ_SEARCH))
 			return 0;
 
 	return -EACCES;
@@ -1090,10 +1091,10 @@ int follow_down_one(struct path *path)
 }
 EXPORT_SYMBOL(follow_down_one);
 
-static inline bool managed_dentry_might_block(struct dentry *dentry)
+static inline int managed_dentry_rcu(struct dentry *dentry)
 {
-	return (dentry->d_flags & DCACHE_MANAGE_TRANSIT &&
-		dentry->d_op->d_manage(dentry, true) < 0);
+	return (dentry->d_flags & DCACHE_MANAGE_TRANSIT) ?
+		dentry->d_op->d_manage(dentry, true) : 0;
 }
 
 /*
@@ -1109,11 +1110,18 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 		 * Don't forget we might have a non-mountpoint managed dentry
 		 * that wants to block transit.
 		 */
-		if (unlikely(managed_dentry_might_block(path->dentry)))
+		switch (managed_dentry_rcu(path->dentry)) {
+		case -ECHILD:
+		default:
 			return false;
+		case -EISDIR:
+			return true;
+		case 0:
+			break;
+		}
 
 		if (!d_mountpoint(path->dentry))
-			return true;
+			return !(path->dentry->d_flags & DCACHE_NEED_AUTOMOUNT);
 
 		mounted = __lookup_mnt(path->mnt, path->dentry);
 		if (!mounted)
@@ -1129,7 +1137,8 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 		 */
 		*inode = path->dentry->d_inode;
 	}
-	return read_seqretry(&mount_lock, nd->m_seq);
+	return read_seqretry(&mount_lock, nd->m_seq) &&
+		!(path->dentry->d_flags & DCACHE_NEED_AUTOMOUNT);
 }
 
 static int follow_dotdot_rcu(struct nameidata *nd)
@@ -1401,11 +1410,8 @@ static int lookup_fast(struct nameidata *nd,
 		}
 		path->mnt = mnt;
 		path->dentry = dentry;
-		if (unlikely(!__follow_mount_rcu(nd, path, inode)))
-			goto unlazy;
-		if (unlikely(path->dentry->d_flags & DCACHE_NEED_AUTOMOUNT))
-			goto unlazy;
-		return 0;
+		if (likely(__follow_mount_rcu(nd, path, inode)))
+			return 0;
 unlazy:
 		if (unlazy_walk(nd, dentry))
 			return -ECHILD;
@@ -1542,7 +1548,7 @@ static inline int walk_component(struct nameidata *nd, struct path *path,
 		inode = path->dentry->d_inode;
 	}
 	err = -ENOENT;
-	if (!inode)
+	if (!inode || d_is_negative(path->dentry))
 		goto out_path_put;
 
 	if (should_follow_link(path->dentry, follow)) {
@@ -2249,15 +2255,16 @@ mountpoint_last(struct nameidata *nd, struct path *path)
 	mutex_unlock(&dir->d_inode->i_mutex);
 
 done:
-	if (!dentry->d_inode) {
+	if (!dentry->d_inode || d_is_negative(dentry)) {
 		error = -ENOENT;
 		dput(dentry);
 		goto out;
 	}
 	path->dentry = dentry;
-	path->mnt = mntget(nd->path.mnt);
+	path->mnt = nd->path.mnt;
 	if (should_follow_link(dentry, nd->flags & LOOKUP_FOLLOW))
 		return 1;
+	mntget(path->mnt);
 	follow_mount(path);
 	error = 0;
 out:
@@ -2379,7 +2386,7 @@ static inline int check_sticky(struct inode *dir, struct inode *inode)
 		return 0;
 	if (uid_eq(dir->i_uid, fsuid))
 		return 0;
-	return !inode_capable(inode, CAP_FOWNER);
+	return !capable_wrt_inode_uidgid(inode, CAP_FOWNER);
 }
 
 /*
@@ -2994,7 +3001,7 @@ retry_lookup:
 finish_lookup:
 	/* we _can_ be in RCU mode here */
 	error = -ENOENT;
-	if (d_is_negative(path->dentry)) {
+	if (!inode || d_is_negative(path->dentry)) {
 		path_to_nameidata(path, nd);
 		goto out;
 	}
@@ -4017,7 +4024,7 @@ SYSCALL_DEFINE2(link, const char __user *, oldname, const char __user *, newname
  * The worst of all namespace operations - renaming directory. "Perverted"
  * doesn't even start to describe it. Somebody in UCB had a heck of a trip...
  * Problems:
- *	a) we can get into loop creation. Check is done in is_subdir().
+ *	a) we can get into loop creation.
  *	b) race potential - two innocent renames can create a loop together.
  *	   That's where 4.4 screws up. Current fix: serialization on
  *	   sb->s_vfs_rename_mutex. We might be more accurate, but that's another
@@ -4073,7 +4080,7 @@ int vfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	if (error)
 		return error;
 
-	if (!old_dir->i_op->rename)
+	if (!old_dir->i_op->rename && !old_dir->i_op->rename2)
 		return -EPERM;
 
 	if (flags && !old_dir->i_op->rename2)
@@ -4132,10 +4139,11 @@ int vfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 		if (error)
 			goto out;
 	}
-	if (!flags) {
+	if (!old_dir->i_op->rename2) {
 		error = old_dir->i_op->rename(old_dir, old_dentry,
 					      new_dir, new_dentry);
 	} else {
+		WARN_ON(old_dir->i_op->rename != NULL);
 		error = old_dir->i_op->rename2(old_dir, old_dentry,
 					       new_dir, new_dentry, flags);
 	}

@@ -56,6 +56,7 @@
 #include <linux/workqueue.h>
 #include <linux/i8042.h>
 #include <linux/acpi.h>
+#include <linux/dmi.h>
 #include <asm/uaccess.h>
 
 MODULE_AUTHOR("John Belmonte");
@@ -210,6 +211,37 @@ static const struct key_entry toshiba_acpi_keymap[] = {
 	{ KE_KEY, 0xb33, { KEY_PLAYPAUSE } },
 	{ KE_KEY, 0xb5a, { KEY_MEDIA } },
 	{ KE_IGNORE, 0x1430, { KEY_RESERVED } },
+	{ KE_END, 0 },
+};
+
+/* alternative keymap */
+static const struct dmi_system_id toshiba_alt_keymap_dmi[] = {
+	{
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "TOSHIBA"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "Satellite M840"),
+		},
+	},
+	{
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "TOSHIBA"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "Qosmio X75-A"),
+		},
+	},
+	{}
+};
+
+static const struct key_entry toshiba_acpi_alt_keymap[] = {
+	{ KE_KEY, 0x157, { KEY_MUTE } },
+	{ KE_KEY, 0x102, { KEY_ZOOMOUT } },
+	{ KE_KEY, 0x103, { KEY_ZOOMIN } },
+	{ KE_KEY, 0x12c, { KEY_KBDILLUMTOGGLE } },
+	{ KE_KEY, 0x139, { KEY_ZOOMRESET } },
+	{ KE_KEY, 0x13e, { KEY_SWITCHVIDEOMODE } },
+	{ KE_KEY, 0x13c, { KEY_BRIGHTNESSDOWN } },
+	{ KE_KEY, 0x13d, { KEY_BRIGHTNESSUP } },
+	{ KE_KEY, 0x158, { KEY_WLAN } },
+	{ KE_KEY, 0x13f, { KEY_TOUCHPAD_TOGGLE } },
 	{ KE_END, 0 },
 };
 
@@ -847,7 +879,9 @@ static int lcd_proc_open(struct inode *inode, struct file *file)
 
 static int set_lcd_brightness(struct toshiba_acpi_dev *dev, int value)
 {
-	u32 hci_result;
+	u32 in[HCI_WORDS] = { HCI_SET, HCI_LCD_BRIGHTNESS, 0, 0, 0, 0 };
+	u32 out[HCI_WORDS];
+	acpi_status status;
 
 	if (dev->tr_backlight_supported) {
 		bool enable = !value;
@@ -858,9 +892,20 @@ static int set_lcd_brightness(struct toshiba_acpi_dev *dev, int value)
 			value--;
 	}
 
-	value = value << HCI_LCD_BRIGHTNESS_SHIFT;
-	hci_write1(dev, HCI_LCD_BRIGHTNESS, value, &hci_result);
-	return hci_result == HCI_SUCCESS ? 0 : -EIO;
+	in[2] = value << HCI_LCD_BRIGHTNESS_SHIFT;
+	status = hci_raw(dev, in, out);
+	if (ACPI_FAILURE(status) || out[0] == HCI_FAILURE) {
+		pr_err("ACPI call to set brightness failed");
+		return -EIO;
+	}
+	/* Extra check for "incomplete" backlight method, where the AML code
+	 * doesn't check for HCI_SET or HCI_GET and returns HCI_SUCCESS,
+	 * the actual brightness, and in some cases the max brightness.
+	 */
+	if (out[2] > 0  || out[3] == 0xE000)
+		return -ENODEV;
+
+	return out[0] == HCI_SUCCESS ? 0 : -EIO;
 }
 
 static int set_lcd_status(struct backlight_device *bd)
@@ -1213,7 +1258,7 @@ static ssize_t toshiba_kbd_bl_mode_store(struct device *dev,
 	int mode = -1;
 	int time = -1;
 
-	if (sscanf(buf, "%i", &mode) != 1 && (mode != 2 || mode != 1))
+	if (sscanf(buf, "%i", &mode) != 1  || (mode != 2 || mode != 1))
 		return -EINVAL;
 
 	/* Set the Keyboard Backlight Mode where:
@@ -1440,6 +1485,7 @@ static int toshiba_acpi_setup_keyboard(struct toshiba_acpi_dev *dev)
 	acpi_handle ec_handle;
 	int error;
 	u32 hci_result;
+	const struct key_entry *keymap = toshiba_acpi_keymap;
 
 	dev->hotkey_dev = input_allocate_device();
 	if (!dev->hotkey_dev)
@@ -1449,7 +1495,9 @@ static int toshiba_acpi_setup_keyboard(struct toshiba_acpi_dev *dev)
 	dev->hotkey_dev->phys = "toshiba_acpi/input0";
 	dev->hotkey_dev->id.bustype = BUS_HOST;
 
-	error = sparse_keymap_setup(dev->hotkey_dev, toshiba_acpi_keymap, NULL);
+	if (dmi_check_system(toshiba_alt_keymap_dmi))
+		keymap = toshiba_acpi_alt_keymap;
+	error = sparse_keymap_setup(dev->hotkey_dev, keymap, NULL);
 	if (error)
 		goto err_free_dev;
 
